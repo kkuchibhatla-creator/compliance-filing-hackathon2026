@@ -1,0 +1,12 @@
+{
+  "name": "compliance-filing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/check-source.mjs && python3 scripts/check-metadata.py"
+  },
+  "devDependencies": {
+    "@apexdevtools/apex-parser": "^5.3.0",
+    "@lwc/compiler": "^9.5.2"
+  }
+}

@@ -1,0 +1,98 @@
+<template>
+    <div class="workspace">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">AGENTFORCE GOVERNANCE</p>
+                <h1>COMPLIANCE FILING<span class="star" aria-hidden="true">✦</span></h1>
+                <p class="hero-copy">Evidence. Review. Accountable sign-off.</p>
+            </div>
+            <div class="hero-note">Every claim has a source.<br/>Every approval has a scope.</div>
+        </header>
+
+        <div class="toolbar">
+            <lightning-combobox class="case-picker" label="Use case · most recent 50 visible records" value={caseId} options={caseOptions} onchange={handleSelect} disabled={busy}></lightning-combobox>
+            <div class="toolbar-actions">
+                <lightning-button label="Refresh" onclick={handleRefresh} disabled={busy}></lightning-button>
+                <template lwc:if={canManage}>
+                    <lightning-button label="Load bank demo" onclick={handleSeed} disabled={busy}></lightning-button>
+                    <lightning-button variant="brand" label="New use case" onclick={handleNew} disabled={busy}></lightning-button>
+                </template>
+            </div>
+        </div>
+
+        <template lwc:if={busy}><lightning-spinner alternative-text="Updating governance workspace" size="small"></lightning-spinner></template>
+        <template lwc:if={error}><div class="message error" role="alert">{error}</div></template>
+        <template lwc:if={notice}><div class="message notice" role="status">{notice}</div></template>
+
+        <template lwc:if={editing}>
+            <section class="panel editor" aria-labelledby="intake-title">
+                <h2 id="intake-title" tabindex="-1" data-editor-title>Describe the use case</h2>
+                <p class="muted">These declared facts determine applicability and approval scope. Keep each description within 2,000 characters.</p>
+                <form onsubmit={handleSave}>
+                    <div class="form-grid">
+                        <lightning-input data-intake data-field="Name" label="Use case name" value={form.Name} onchange={handleField} maxlength="80" required></lightning-input>
+                        <lightning-combobox data-intake data-field="Sector__c" label="Regulated sector" options={sectorOptions} value={form.Sector__c} onchange={handleField} required></lightning-combobox>
+                        <lightning-combobox data-intake data-field="Bank_Type__c" label="Bank type (when the sector is Bank)" options={bankTypeOptions} value={form.Bank_Type__c} onchange={handleField}></lightning-combobox>
+                        <lightning-textarea data-intake data-field="Purpose__c" label="Purpose and customer impact" value={form.Purpose__c} onchange={handleField} maxlength="2000" required></lightning-textarea>
+                        <lightning-textarea data-intake data-field="Permitted_Actions__c" label="Permitted actions and human boundaries" value={form.Permitted_Actions__c} onchange={handleField} maxlength="2000" required></lightning-textarea>
+                        <lightning-textarea data-intake data-field="Data_Categories__c" label="Data categories and exclusions" value={form.Data_Categories__c} onchange={handleField} maxlength="2000"></lightning-textarea>
+                        <lightning-textarea data-intake data-field="Processing_Locations__c" label="Processing locations and subprocessors" value={form.Processing_Locations__c} onchange={handleField} maxlength="2000" required></lightning-textarea>
+                        <lightning-input data-intake data-field="Retention_Days__c" type="number" label="Declared retention in days" value={form.Retention_Days__c} onchange={handleField} min="1" max="36500" step="1" required></lightning-input>
+                        <fieldset class="scope-flags"><legend>Scope signals</legend>
+                            <lightning-input data-field="Personal_Data__c" type="checkbox" label="Processes personal data" checked={form.Personal_Data__c} onchange={handleField}></lightning-input>
+                            <lightning-input data-field="Customer_Facing__c" type="checkbox" label="Customer-facing use case" checked={form.Customer_Facing__c} onchange={handleField}></lightning-input>
+                            <lightning-input data-field="Cross_Border__c" type="checkbox" label="Includes overseas processing" checked={form.Cross_Border__c} onchange={handleField}></lightning-input>
+                            <lightning-input data-field="Cloud_Outsourcing__c" type="checkbox" label="Includes cloud or IT outsourcing" checked={form.Cloud_Outsourcing__c} onchange={handleField}></lightning-input>
+                            <lightning-input data-field="Material_IT_Outsourcing__c" type="checkbox" label="IT outsourcing classified as material (reviewer must confirm)" checked={form.Material_IT_Outsourcing__c} onchange={handleField}></lightning-input>
+                        </fieldset>
+                    </div>
+                    <div class="actions"><lightning-button type="submit" variant="brand" label="Save scope" disabled={busy}></lightning-button><lightning-button label="Cancel" onclick={handleCancel} disabled={busy}></lightning-button></div>
+                </form>
+            </section>
+        </template>
+
+        <template lwc:if={hasCase}>
+            <template lwc:if={isDemo}><div class="demo-banner">SYNTHETIC DEMO · Fictional bank and evidence. The current user can demonstrate all five review roles.</div></template>
+            <template lwc:if={outdated}><div class="message warning" role="status"><strong>Filing scope changed.</strong> Inputs, evidence availability, validity or the control library no longer match this filing. Prepare a new version before further sign-off.</div></template>
+            <section class="case-heading">
+                <div><p class="eyebrow dark">{filingLabel}</p><h2>{useCase.Name}</h2><p class="muted">{useCase.Purpose__c}</p></div>
+                <template lwc:if={canManage}><div class="actions"><lightning-button label="Edit scope" onclick={handleEdit} disabled={busy}></lightning-button><lightning-button variant="brand" label="Prepare filing" onclick={handlePrepare} disabled={disablePrepare}></lightning-button></div></template>
+            </section>
+
+            <div class="metrics">
+                <article class="metric"><p>Evidence requiring attention</p><strong>{blockerCount}</strong><span>Missing, stale or expired</span></article>
+                <article class="metric"><p>Human review gates cleared</p><strong>{clearedCount}<small> / 5</small></strong><span>Current role and evidence scope</span></article>
+                <article class="metric"><p>Proposed risk tier</p><strong class="risk">{riskLevel}</strong><span>Demo policy · human confirmation</span></article>
+                <article class={clearanceClass}><p>Release authorization</p><strong>{clearanceLabel}</strong><span>Deployment requires a separate controlled action</span></article>
+            </div>
+
+            <lightning-tabset variant="scoped">
+                <lightning-tab label="Executive brief">
+                    <section class="panel"><h3>Decision brief</h3><p class="preserve">{executiveSummary}</p><div class="scope-summary"><span class="badge neutral">{useCase.Sector__c}</span><span>Retention: {useCase.Retention_Days__c} days</span><span>Processing: {useCase.Processing_Locations__c}</span></div><h3 class="spaced">Risk assessment record</h3><p class="preserve code">{filing.Risk_Assessment__c}</p><p class="muted spaced">Briefs reflect the recorded scope and evidence. Reviewers confirm regulatory applicability and evidence adequacy.</p></section>
+                </lightning-tab>
+                <lightning-tab label="Controls and evidence">
+                    <template lwc:if={canManage}>
+                        <section class="panel evidence-upload"><h3>Attach evidence to a control</h3><p class="muted">Upload PNG, JPG or JPEG images, PDFs, Word documents, text files or any other file type allowed by your org. Choose a control and validity date first. Text files up to 20 KB include readable text; other files retain the pinned original for human review. Salesforce file size and security limits apply.</p><div class="form-grid"><lightning-combobox label="Applicable control" value={selectedControl} options={controlOptions} onchange={handleControl} disabled={busy}></lightning-combobox><lightning-input type="date" label="Evidence valid through" value={expiry} onchange={handleExpiry} disabled={busy}></lightning-input></div><div class="actions"><lightning-file-upload label="Upload and snapshot evidence" record-id={caseId} onuploadfinished={handleUpload} disabled={evidenceUploadDisabled}></lightning-file-upload><template lwc:if={hasPendingUpload}><lightning-button label="Retry evidence snapshot" onclick={handleRetryUpload} disabled={evidenceUploadDisabled}></lightning-button></template><template lwc:if={isDemo}><lightning-button label="Attach synthetic demo evidence" onclick={handleDemoEvidence} disabled={evidenceUploadDisabled}></lightning-button></template></div><template lwc:if={hasPendingUpload}><p class="muted">Your file is uploaded. If the snapshot failed, correct the issue shown above and choose Retry evidence snapshot to attach it to the selected control without uploading again.</p></template></section>
+                    </template>
+                    <div class="control-grid">
+                        <template for:each={controlRows} for:item="control">
+                            <article class="panel control-card" key={control.Control_Key__c}>
+                                <div class="card-top"><span class="control-key">{control.Control_Key__c} · {control.Reviewer_Role__c}</span><span class={control.statusClass}>{control.Status__c}</span></div>
+                                <h3>{control.Title__c}</h3><p class="clause">{control.Clause__c}</p><p>{control.Explanation__c}</p><p class="legal-note">{control.Legal_Status__c}</p>
+                                <template lwc:if={control.hasSource}><a href={control.Source_URL__c} target="_blank" rel="noopener noreferrer">Open regulatory source (new tab)</a></template>
+                                <template lwc:if={control.hasProof}><details class="evidence-detail"><summary>Inspect evidence snapshot</summary><p><a href={control.sourceLink} target="_blank" rel="noopener noreferrer">Download pinned source file (new tab)</a></p><p>Valid through: {control.proof.Expires_On__c}</p><p class="hash">{control.checksumLabel}: {control.proof.Content_Hash__c}</p><p class="preserve">{control.proof.Snapshot__c}</p></details></template>
+                            </article>
+                        </template>
+                    </div>
+                </lightning-tab>
+                <lightning-tab label="Human sign-offs">
+                    <template lwc:if={canManage}><section class="panel"><h3>File with the five review gates</h3><p class="muted">Assign active users with the Compliance Filing Reviewer permission set. Filing creates native Salesforce approval requests. Unchanged role scopes may reference a prior human decision.</p><div class="assignment-grid"><template for:each={reviewerAssignments} for:item="assignment"><lightning-record-picker key={assignment.role} label={assignment.role} object-api-name="User" value={assignment.value} data-role={assignment.role} onchange={handleApprover} disabled={busy}></lightning-record-picker></template></div><div class="actions"><lightning-button variant="brand" label="File for human sign-off" onclick={handleSubmit} disabled={disableSubmit}></lightning-button></div></section></template>
+                    <div class="review-grid"><template for:each={reviewRows} for:item="review"><article class="panel" key={review.Id}><div class="card-top"><h3>{review.Reviewer_Role__c}</h3><span class={review.statusClass}>{review.Status__c}</span></div><p class="muted">Reviewer: {review.approverName}</p><template lwc:if={review.affected}><p class="impact">Relevant inputs or evidence changed. This role needs another review.</p></template><template lwc:if={review.carried}><p>{review.Rationale__c}</p><a href={review.previousLink} target="_blank" rel="noopener noreferrer">Open original human decision (new tab)</a></template><details class="spaced"><summary>Read this reviewer’s brief</summary><p class="preserve">{review.Brief__c}</p></details><template lwc:if={canManage}><div class="actions"><lightning-button label="Generate AI reviewer draft" data-role={review.Reviewer_Role__c} onclick={handleGenerateDraft} disabled={review.disableGenerate}></lightning-button></div></template><template lwc:if={review.hasAiDraft}><details class="spaced"><summary>AI-generated draft · human verification required</summary><p class="preserve">{review.AI_Draft__c}</p><p class="hash">Generation reference: {review.AI_Generation_Id__c}</p></details></template><lightning-textarea label="Decision rationale" value={review.rationale} data-id={review.Id} onchange={handleRationale} maxlength="3000" disabled={review.disabled}></lightning-textarea><div class="actions"><lightning-button variant="brand" label="Approve" data-id={review.Id} data-decision="Approve" onclick={handleDecision} disabled={review.disabled}></lightning-button><lightning-button variant="destructive-text" label="Reject and request rework" data-id={review.Id} data-decision="Reject" onclick={handleDecision} disabled={review.disabled}></lightning-button><a href={review.recordLink} target="_blank" rel="noopener noreferrer">Review record (new tab)</a></div></article></template></div>
+                </lightning-tab>
+                <lightning-tab label="Decision history"><section class="panel"><h3>Queryable business audit trail</h3><p class="muted">Most recent 100 events. All events remain queryable in Salesforce. The log records actors, source references, scope hashes and outcomes.</p><ol class="timeline"><template for:each={auditRows} for:item="event"><li key={event.Id}><div class="card-top"><strong>{event.Event__c}</strong><lightning-formatted-date-time value={event.CreatedDate} year="numeric" month="short" day="2-digit" hour="2-digit" minute="2-digit"></lightning-formatted-date-time></div><p class="muted">{event.CreatedBy.Name}</p><details><summary>Inspect event details</summary><p class="preserve code">{event.Details__c}</p></details></li></template></ol></section></lightning-tab>
+            </lightning-tabset>
+            <footer class="limitations"><strong>Library scope:</strong> {workspace.limitations}</footer>
+        </template>
+        <template lwc:else><section class="empty"><h2>Give a ready use case a path to sign-off.</h2><p>Create a use case or load the synthetic bank demo to inspect evidence, file reviews and demonstrate rework.</p></section></template>
+    </div>
+</template>

@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata"><fullName>Sector__c</fullName><label>Sector</label><type>Picklist</type><valueSet><restricted>true</restricted><valueSetDefinition><sorted>false</sorted><value><fullName>Bank</fullName><default>true</default><label>Bank</label></value><value><fullName>Securities</fullName><default>false</default><label>Securities</label></value><value><fullName>Insurance</fullName><default>false</default><label>Insurance</label></value></valueSetDefinition></valueSet></CustomField>
