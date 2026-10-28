@@ -1,2 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<CustomField xmlns="http://soap.sforce.com/2006/04/metadata"><fullName>Bank_Type__c</fullName><label>Bank Type</label><type>Picklist</type><valueSet><restricted>true</restricted><valueSetDefinition><sorted>false</sorted><value><fullName>Commercial Bank</fullName><default>true</default><label>Commercial Bank</label></value><value><fullName>Small Finance Bank</fullName><default>false</default><label>Small Finance Bank</label></value><value><fullName>Payments Bank</fullName><default>false</default><label>Payments Bank</label></value><value><fullName>Regional Rural Bank</fullName><default>false</default><label>Regional Rural Bank</label></value><value><fullName>Other</fullName><default>false</default><label>Other</label></value></valueSetDefinition></valueSet></CustomField>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Bank_Type__c</fullName>
+    <label>Bank Type</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Commercial Bank</fullName>
+                <default>true</default>
+                <label>Commercial Bank</label>
+            </value>
+            <value>
+                <fullName>Small Finance Bank</fullName>
+                <default>false</default>
+                <label>Small Finance Bank</label>
+            </value>
+            <value>
+                <fullName>Payments Bank</fullName>
+                <default>false</default>
+                <label>Payments Bank</label>
+            </value>
+            <value>
+                <fullName>Regional Rural Bank</fullName>
+                <default>false</default>
+                <label>Regional Rural Bank</label>
+            </value>
+            <value>
+                <fullName>Other</fullName>
+                <default>false</default>
+                <label>Other</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

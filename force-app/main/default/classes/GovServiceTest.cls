@@ -160,21 +160,83 @@ private class GovServiceTest {
         System.runAs(builder()) {
             Id caseId=newCase(); supplyEvidence(caseId,'RBI-ACCESS',false);
             Id filingId=GovService.prepare(caseId);
-            GovService.submit(caseId,selfReviewers());
+            try { GovService.submit(caseId,selfReviewers()); Assert.fail('Direct Apex submission must refuse incomplete evidence.'); }
+            catch (GovService.GovernanceException error) {
+                Assert.isTrue(error.getMessage().contains('RBI-ACCESS'));
+                Assert.isTrue(error.getMessage().contains('Security'));
+            }
             Gov_Review__c security=review(filingId,'Security');
-            try { GovService.decide(security.Id,'Approve','Looks sufficient.'); Assert.fail('Approval must fail with missing evidence.'); }
-            catch (GovService.GovernanceException error) { Assert.isTrue(error.getMessage().contains('evidence')); }
-            Gov_Review__c architecture=review(filingId,'Architecture');
-            ProcessInstanceWorkitem item=[SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :architecture.Id LIMIT 1];
-            Approval.ProcessWorkitemRequest direct=new Approval.ProcessWorkitemRequest(); direct.setWorkitemId(item.Id); direct.setAction('Approve');
-            Assert.isTrue(Approval.process(direct).isSuccess());
-            GovController.Workspace view=GovController.getWorkspace(caseId);
-            Assert.isFalse(view.releaseReady,'Native decisions cannot bypass the aggregate completeness and version gate.');
-            Assert.areEqual('Approved',review(filingId,'Architecture').Status__c,'Native decisions are reconciled from the platform records.');
-            GovService.decide(security.Id,'Reject','Supply the restricted-access test and owner.');
-            Assert.areEqual('Rework',GovService.latestFiling(caseId).Status__c);
+            Test.startTest();
+            GovService.FilingResult blocked=GovController.submitFiling(caseId,JSON.serialize(selfReviewers()));
+            GovService.FilingResult retry=GovController.submitFiling(caseId,JSON.serialize(selfReviewers()));
+            Test.stopTest();
+            Assert.isFalse(blocked.submitted);
+            Assert.isFalse(retry.submitted);
+            Assert.areEqual('RBI-ACCESS',blocked.blockers[0].controlKey);
+            Assert.areEqual('Security',blocked.blockers[0].reviewerRole);
+            Assert.areEqual(UserInfo.getUserId(),blocked.blockers[0].ownerId);
+            Set<Id> reviewIds=new Map<Id,Gov_Review__c>([SELECT Id FROM Gov_Review__c WHERE Filing__c = :filingId]).keySet();
+            Assert.areEqual(0,[SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId IN :reviewIds]);
+            Assert.areEqual('Draft',GovService.latestFiling(caseId).Status__c);
             Assert.areEqual(1,[SELECT COUNT() FROM Task WHERE WhatId = :security.Id]);
+            Assert.areEqual(2,[SELECT COUNT() FROM Gov_Audit__c WHERE Filing__c = :filingId AND Event__c = 'FILING_BLOCKED']);
             Assert.isFalse(GovController.getWorkspace(caseId).releaseReady);
+        }
+    }
+    @IsTest
+    static void submittedRetriesReturnTheExistingRequests() {
+        System.runAs(builder()) {
+            Id caseId=newCase(); supplyEvidence(caseId,null,false);
+            Id filingId=GovService.prepare(caseId);
+            Test.startTest();
+            GovService.FilingResult filed=GovController.submitFiling(caseId,JSON.serialize(selfReviewers()));
+            GovService.FilingResult retry=GovController.submitFiling(caseId,JSON.serialize(selfReviewers()));
+            Test.stopTest();
+            Assert.isTrue(filed.submitted); Assert.isFalse(filed.alreadySubmitted);
+            Assert.isTrue(retry.submitted); Assert.isTrue(retry.alreadySubmitted);
+            Assert.areEqual(filed.filingId,retry.filingId);
+            Set<Id> reviewIds=new Map<Id,Gov_Review__c>([SELECT Id FROM Gov_Review__c WHERE Filing__c = :filingId]).keySet();
+            Assert.areEqual(5,[SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId IN :reviewIds]);
+            Assert.areEqual(1,[SELECT COUNT() FROM Gov_Audit__c WHERE Filing__c = :filingId AND Event__c = 'FILED_FOR_HUMAN_SIGNOFF']);
+        }
+    }
+    @IsTest
+    static void allFiveGatesAreRequiredEvenThroughApex() {
+        System.runAs(builder()) {
+            Id caseId=newCase(); supplyEvidence(caseId,null,false);
+            Id filingId=GovService.prepare(caseId);
+            delete review(filingId,'Security');
+            try { GovService.submit(caseId,selfReviewers()); Assert.fail('Four gates must not be filed.'); }
+            catch (GovService.GovernanceException error) { Assert.isTrue(error.getMessage().contains('five')); }
+            Assert.areEqual('Draft',GovService.latestFiling(caseId).Status__c);
+        }
+    }
+    @IsTest
+    static void expiredEvidenceBlocksSubmissionAndCreatesWork() {
+        System.runAs(builder()) {
+            Id caseId=newCase(); supplyEvidence(caseId,null,true);
+            Id filingId=GovService.prepare(caseId);
+            Test.startTest();
+            GovService.FilingResult result=GovController.submitFiling(caseId,JSON.serialize(selfReviewers()));
+            Test.stopTest();
+            Assert.isFalse(result.submitted); Assert.isTrue(result.blockers.size() > 1);
+            for (GovService.FilingBlocker blocker : result.blockers) Assert.areEqual('Expired',blocker.evidenceStatus);
+            Set<Id> reviewIds=new Map<Id,Gov_Review__c>([SELECT Id FROM Gov_Review__c WHERE Filing__c = :filingId]).keySet();
+            Assert.areEqual(result.blockers.size(),[SELECT COUNT() FROM Task WHERE WhatId IN :reviewIds]);
+            Assert.areEqual(0,[SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId IN :reviewIds]);
+        }
+    }
+    @IsTest
+    static void auditHistoryCannotBeChangedOrCascadeDeleted() {
+        System.runAs(builder()) {
+            Id caseId=newCase();
+            Gov_Audit__c event=[SELECT Id, Event__c FROM Gov_Audit__c WHERE Use_Case__c = :caseId LIMIT 1];
+            event.Event__c='CHANGED';
+            Assert.isFalse(Database.update(event,false).isSuccess());
+            Assert.isFalse(Database.delete(event,false).isSuccess());
+            Assert.isFalse(Database.delete(new Gov_Use_Case__c(Id=caseId),false).isSuccess());
+            Assert.areEqual(1,[SELECT COUNT() FROM Gov_Audit__c WHERE Use_Case__c = :caseId]);
+            Assert.areEqual('INTAKE_SAVED',[SELECT Event__c FROM Gov_Audit__c WHERE Id = :event.Id].Event__c);
         }
     }
     @IsTest
@@ -278,6 +340,23 @@ private class GovServiceTest {
             Assert.areEqual('Rework',GovService.latestFiling(caseId).Status__c);
             try { GovController.saveUseCase('{}'); Assert.fail('Incomplete intake must be rejected at the UI boundary.'); }
             catch (AuraHandledException error) { Assert.isTrue(error.getMessage().contains('Provide a name')); }
+        }
+    }
+    @IsTest
+    static void reviewDemosArriveFiledAndDecidable() {
+        System.runAs(builder()) {
+            List<Id> ids=new List<Id>{GovController.seedReviewDemo(0)};
+            Test.startTest();
+            ids.add(GovController.seedReviewDemo(1));
+            Test.stopTest();
+            Assert.areEqual(ids[0],GovController.seedReviewDemo(0),'Seeding again must not duplicate the demos.');
+            for (Id caseId : ids) {
+                GovController.Workspace w=GovController.getWorkspace(caseId);
+                Assert.areEqual('In Review',w.filing.Status__c);
+                Assert.areEqual(0,w.blockers);
+                Assert.areEqual(5,w.reviews.size());
+                for (GovController.ReviewView r : w.reviews) Assert.isTrue(r.canDecide,'Each gate waits on the seeding reviewer.');
+            }
         }
     }
 }

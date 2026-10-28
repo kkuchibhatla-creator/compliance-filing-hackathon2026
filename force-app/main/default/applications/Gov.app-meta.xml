@@ -1,2 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<CustomApplication xmlns="http://soap.sforce.com/2006/04/metadata"><description>Agentforce governance filing workspace</description><formFactors>Large</formFactors><label>Compliance Filing</label><navType>Standard</navType><tabs>Gov</tabs><uiType>Lightning</uiType></CustomApplication>
+<CustomApplication xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Agentforce governance filing workspace</description>
+    <formFactors>Large</formFactors>
+    <isNavAutoTempTabsDisabled>false</isNavAutoTempTabsDisabled>
+    <isNavPersonalizationDisabled>false</isNavPersonalizationDisabled>
+    <isNavTabPersistenceDisabled>false</isNavTabPersistenceDisabled>
+    <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
+    <label>Compliance Filing</label>
+    <navType>Standard</navType>
+    <tabs>Gov</tabs>
+    <uiType>Lightning</uiType>
+</CustomApplication>

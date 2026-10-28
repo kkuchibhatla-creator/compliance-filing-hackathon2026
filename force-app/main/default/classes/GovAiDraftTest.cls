@@ -107,6 +107,10 @@ private class GovAiDraftTest {
             Test.startTest();
             try { GovAiDraft.generate(caseId,'Legal'); Assert.fail('An outdated assessment cannot be used for generation.'); }
             catch (GovService.GovernanceException error) { Assert.isTrue(error.getMessage().contains('scope changed')); }
+            // Filing now requires complete, current evidence; repair both the deliberate demo gap and the changed retention dependencies.
+            GovController.attachSyntheticDemoEvidence(caseId,'RBI-ACCESS');
+            GovController.attachSyntheticDemoEvidence(caseId,'GOV-RISK');
+            GovController.attachSyntheticDemoEvidence(caseId,'DPDP-RETENTION');
             GovController.prepareFiling(caseId);
             Map<String,Id> reviewers=new Map<String,Id>();
             for (String role : GovLibrary.ROLES) reviewers.put(role,UserInfo.getUserId());

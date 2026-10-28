@@ -1,2 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<CustomField xmlns="http://soap.sforce.com/2006/04/metadata"><fullName>Status__c</fullName><label>Status</label><type>Picklist</type><valueSet><restricted>true</restricted><valueSetDefinition><sorted>false</sorted><value><fullName>Missing</fullName><default>true</default><label>Missing</label></value><value><fullName>Evidence attached</fullName><default>false</default><label>Evidence attached</label></value><value><fullName>Not applicable</fullName><default>false</default><label>Not applicable</label></value><value><fullName>Stale</fullName><default>false</default><label>Stale</label></value><value><fullName>Expired</fullName><default>false</default><label>Expired</label></value></valueSetDefinition></valueSet></CustomField>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Status__c</fullName>
+    <label>Status</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Missing</fullName>
+                <default>true</default>
+                <label>Missing</label>
+            </value>
+            <value>
+                <fullName>Evidence attached</fullName>
+                <default>false</default>
+                <label>Evidence attached</label>
+            </value>
+            <value>
+                <fullName>Not applicable</fullName>
+                <default>false</default>
+                <label>Not applicable</label>
+            </value>
+            <value>
+                <fullName>Stale</fullName>
+                <default>false</default>
+                <label>Stale</label>
+            </value>
+            <value>
+                <fullName>Expired</fullName>
+                <default>false</default>
+                <label>Expired</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

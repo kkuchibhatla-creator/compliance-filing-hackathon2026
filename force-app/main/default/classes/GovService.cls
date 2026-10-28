@@ -1,5 +1,19 @@
 public with sharing class GovService {
     public class GovernanceException extends Exception {}
+    public class FilingBlocker {
+        @AuraEnabled public String controlKey;
+        @AuraEnabled public String clause;
+        @AuraEnabled public String reviewerRole;
+        @AuraEnabled public String evidenceStatus;
+        @AuraEnabled public Id ownerId;
+    }
+    public class FilingResult {
+        @AuraEnabled public Boolean submitted;
+        @AuraEnabled public Boolean alreadySubmitted;
+        @AuraEnabled public Id filingId;
+        @AuraEnabled public String message;
+        @AuraEnabled public List<FilingBlocker> blockers;
+    }
 
     public static void requireManager() {
         if (!FeatureManagement.checkPermission('Gov_Manage')) throw new GovernanceException('Compliance Filing Builder permission is required.');
@@ -205,7 +219,7 @@ public with sharing class GovService {
         for (Gov_Control__c control : controls) {
             if (role == 'AI Risk' || control.Reviewer_Role__c == role) lines.add(control.Control_Key__c + ' — ' + control.Title__c + ' | ' + control.Status__c + '\n' + control.Clause__c + '\n' + control.Legal_Status__c + '\nEvidence: ' + control.Evidence__c);
         }
-        lines.add('Prepared from structured records using a deterministic template. Generative brief enrichment is not enabled in this starter.');
+        lines.add('Prepared from structured records using a deterministic template. Any separately generated AI draft requires human verification and cannot change the filing decision.');
         return String.join(lines,'\n\n');
     }
     private static void recallPending(Id filingId) {
@@ -224,7 +238,23 @@ public with sharing class GovService {
         List<Gov_Control__c> assessed = controls(useCase);
         if (!current(filing,useCase,assessed)) throw new GovernanceException('Inputs or evidence changed. Prepare the current filing first.');
         if (filing.Status__c != 'Draft') throw new GovernanceException('Only a prepared draft can be filed. Rework requires a new evidence or input version.');
+        for (Gov_Control__c control : assessed) {
+            if (control.Applicable__c && control.Status__c != 'Evidence attached') {
+                throw new GovernanceException('Filing blocked: '+control.Control_Key__c+' has '+control.Status__c.toLowerCase()+
+                    ' evidence. Reviewer gate: '+control.Reviewer_Role__c+'. Clause: '+control.Clause__c+'.');
+            }
+        }
         List<Gov_Review__c> pending = [SELECT Id, Approver__c, Reviewer_Role__c FROM Gov_Review__c WHERE Filing__c = :filing.Id AND Status__c = 'Pending' WITH USER_MODE];
+        List<Gov_Review__c> allReviews = [SELECT Id, Reviewer_Role__c, Status__c FROM Gov_Review__c WHERE Filing__c = :filing.Id WITH USER_MODE];
+        Set<String> gates = new Set<String>();
+        for (Gov_Review__c review : allReviews) {
+            if (!GovLibrary.ROLES.contains(review.Reviewer_Role__c) || gates.contains(review.Reviewer_Role__c) ||
+                (review.Status__c != 'Pending' && review.Status__c != 'Carried Forward')) {
+                throw new GovernanceException('Prepare a filing with exactly one valid review for each of the five gates.');
+            }
+            gates.add(review.Reviewer_Role__c);
+        }
+        if (gates.size() != GovLibrary.ROLES.size()) throw new GovernanceException('All five review gates are required before filing.');
         Set<Id> assigned = new Set<Id>();
         for (Gov_Review__c review : pending) {
             Id approver = approvers == null ? null : approvers.get(review.Reviewer_Role__c);
@@ -236,21 +266,87 @@ public with sharing class GovService {
         for (PermissionSetAssignment assignment : [SELECT AssigneeId FROM PermissionSetAssignment
             WHERE AssigneeId IN :assigned AND PermissionSet.Name IN ('Gov_Builder','Gov_Reviewer')]) permitted.add(assignment.AssigneeId);
         if (permitted.size() != assigned.size()) throw new GovernanceException('Assign the Compliance Filing Reviewer or Builder permission set to every reviewer before filing.');
-        update pending;
-        List<Gov_Use_Case__Share> shares = new List<Gov_Use_Case__Share>();
-        Set<Id> sharedWith = new Set<Id>{useCase.OwnerId};
-        for (Gov_Use_Case__Share share : [SELECT UserOrGroupId FROM Gov_Use_Case__Share WHERE ParentId = :caseId AND UserOrGroupId IN :assigned]) sharedWith.add(share.UserOrGroupId);
-        for (Id assignee : assigned) if (!sharedWith.contains(assignee)) shares.add(new Gov_Use_Case__Share(ParentId=caseId,UserOrGroupId=assignee,AccessLevel='Read',RowCause=Schema.Gov_Use_Case__Share.RowCause.Manual));
-        if (!shares.isEmpty()) insert shares;
-        filing.Status__c='In Review'; update filing;
-        for (Gov_Review__c review : pending) {
-            Approval.ProcessSubmitRequest request = new Approval.ProcessSubmitRequest();
-            request.setObjectId(review.Id); request.setProcessDefinitionNameOrId('Gov_Human_Signoff');
-            request.setComments('COMPLIANCE FILING filing '+filing.Id+'; scope and evidence are version-bound.');
-            Approval.ProcessResult result = Approval.process(request);
-            if (!result.isSuccess()) throw new GovernanceException('Salesforce could not file the approval request. Check the active Gov approval process and reviewer permissions.');
+        Savepoint routingStart = Database.setSavepoint();
+        try {
+            update pending;
+            List<Gov_Use_Case__Share> shares = new List<Gov_Use_Case__Share>();
+            Set<Id> sharedWith = new Set<Id>{useCase.OwnerId};
+            for (Gov_Use_Case__Share share : [SELECT UserOrGroupId FROM Gov_Use_Case__Share WHERE ParentId = :caseId AND UserOrGroupId IN :assigned]) sharedWith.add(share.UserOrGroupId);
+            for (Id assignee : assigned) if (!sharedWith.contains(assignee)) shares.add(new Gov_Use_Case__Share(ParentId=caseId,UserOrGroupId=assignee,AccessLevel='Read',RowCause=Schema.Gov_Use_Case__Share.RowCause.Manual));
+            if (!shares.isEmpty()) insert shares;
+            filing.Status__c='In Review'; update filing;
+            for (Gov_Review__c review : pending) {
+                Approval.ProcessSubmitRequest request = new Approval.ProcessSubmitRequest();
+                request.setObjectId(review.Id); request.setProcessDefinitionNameOrId('Gov_Human_Signoff');
+                request.setComments('COMPLIANCE FILING filing '+filing.Id+'; scope and evidence are version-bound.');
+                Approval.ProcessResult result = Approval.process(request);
+                if (!result.isSuccess()) throw new GovernanceException('Salesforce could not file the approval request. Check the active Gov approval process and reviewer permissions.');
+            }
+            audit(caseId,filing.Id,'FILED_FOR_HUMAN_SIGNOFF',new Map<String,Object>{'nativeApprovalRequests'=>pending.size(),'reviewerIds'=>assigned});
+        } catch (Exception error) {
+            // Keep routing atomic even when an Apex caller catches the exception.
+            Database.rollback(routingStart);
+            throw error;
         }
-        audit(caseId,filing.Id,'FILED_FOR_HUMAN_SIGNOFF',new Map<String,Object>{'nativeApprovalRequests'=>pending.size(),'reviewerIds'=>assigned});
+    }
+    /** A normal blocked result commits its remediation records; it must not become an exception at the UI boundary. */
+    public static FilingResult attemptSubmit(Id caseId, Map<String,Id> approvers) {
+        Gov_Use_Case__c useCase = editableCase(caseId);
+        Gov_Filing__c filing = latestFiling(caseId);
+        List<Gov_Control__c> assessed = controls(useCase);
+        FilingResult result = new FilingResult();
+        result.submitted=false; result.alreadySubmitted=false; result.blockers=new List<FilingBlocker>();
+        result.filingId=filing == null ? null : filing.Id;
+        if (!current(filing,useCase,assessed)) throw new GovernanceException('Inputs or evidence changed. Prepare the current filing first.');
+        // The use-case lock serializes retries; existing approvals are never submitted twice.
+        if (filing.Status__c == 'In Review' || filing.Status__c == 'Approved') {
+            result.submitted=true; result.alreadySubmitted=true;
+            result.message='This filing was already submitted. Existing human review requests are unchanged.';
+            return result;
+        }
+        if (filing.Status__c != 'Draft') throw new GovernanceException('Rework requires a new evidence or input version before filing.');
+        Map<String,Id> reviewByRole=new Map<String,Id>();
+        for (Gov_Review__c review : [SELECT Id, Reviewer_Role__c FROM Gov_Review__c WHERE Filing__c = :filing.Id WITH USER_MODE]) {
+            reviewByRole.put(review.Reviewer_Role__c,review.Id);
+        }
+        Set<Id> reviewIds=new Set<Id>(reviewByRole.values());
+        Set<String> openTasks=new Set<String>();
+        for (Task task : [SELECT WhatId, Subject FROM Task WHERE WhatId IN :reviewIds AND IsClosed = false]) {
+            openTasks.add(String.valueOf(task.WhatId)+'|'+task.Subject);
+        }
+        List<Task> tasks=new List<Task>();
+        for (Gov_Control__c control : assessed) {
+            if (!control.Applicable__c || control.Status__c == 'Evidence attached') continue;
+            FilingBlocker blocker=new FilingBlocker();
+            blocker.controlKey=control.Control_Key__c; blocker.clause=control.Clause__c;
+            blocker.reviewerRole=control.Reviewer_Role__c; blocker.evidenceStatus=control.Status__c;
+            blocker.ownerId=useCase.OwnerId; result.blockers.add(blocker);
+            Id reviewId=reviewByRole.get(control.Reviewer_Role__c);
+            if (reviewId == null) throw new GovernanceException('Prepare all five reviewer gates before recording filing blockers.');
+            String subject='Supply filing evidence: '+control.Control_Key__c;
+            if (!openTasks.contains(String.valueOf(reviewId)+'|'+subject)) {
+                tasks.add(new Task(WhatId=reviewId,OwnerId=useCase.OwnerId,Subject=subject,Status='Not Started',Priority='High',
+                    ActivityDate=Date.today().addDays(1),Description='Filing '+filing.Id+'; '+control.Control_Key__c+
+                    '; evidence '+control.Status__c+'; reviewer '+control.Reviewer_Role__c+'.\nClause: '+control.Clause__c));
+            }
+        }
+        if (!result.blockers.isEmpty()) {
+            Savepoint blockedStart=Database.setSavepoint();
+            try {
+                if (!tasks.isEmpty()) insert tasks;
+                audit(caseId,filing.Id,'FILING_BLOCKED',new Map<String,Object>{'blockers'=>result.blockers,'actor'=>UserInfo.getUserId(),'tasksCreated'=>tasks.size()});
+            } catch (Exception error) {
+                Database.rollback(blockedStart);
+                throw error;
+            }
+            result.message='Filing blocked: '+result.blockers[0].controlKey+' needs current evidence for the '+
+                result.blockers[0].reviewerRole+' gate. Remediation Tasks and an audit event were recorded.';
+            return result;
+        }
+        submit(caseId,approvers);
+        result.submitted=true;
+        result.message='Filed. Native Salesforce approval requests are waiting on the reviewers.';
+        return result;
     }
     public static void decide(Id reviewId, String decision, String rationale) {
         if (!FeatureManagement.checkPermission('Gov_Review')) throw new GovernanceException('Compliance Filing Reviewer permission is required.');

@@ -1,6 +1,6 @@
 # Compliance Filing
 
-Private team source repository for the Salesforce-native Compliance Filing prototype. Both the Lightning frontend and Apex backend deploy to the team's existing OrgFarm org. The browser renders the Lightning UI; Salesforce runs the Apex and stores records and files.
+Public team source repository for the Salesforce-native Compliance Filing prototype. Both the Lightning frontend and Apex backend deploy to the team's existing OrgFarm org. The browser renders the Lightning UI; Salesforce runs the Apex and stores records and files.
 
 ## Source layout
 
@@ -17,7 +17,7 @@ Private team source repository for the Salesforce-native Compliance Filing proto
 
 ## Start locally
 
-Install Git, Node.js 24, Python 3 and Salesforce CLI. Clone this private repository with your own GitHub account, enter its directory, then run:
+Install Git, Node.js 24, Python 3 and Salesforce CLI. Clone this repository, enter its directory, then run:
 
 ```sh
 npm ci
@@ -31,7 +31,7 @@ sf org login web --instance-url <TEAM_ORG_LOGIN_URL> --alias compliance-demo
 sf org open --target-org compliance-demo --path /lightning/n/Gov
 ```
 
-The placeholders are intentional. Passwords, OAuth tokens, Salesforce CLI authentication state, customer evidence and local deployment artifacts are not stored in Git. Access to this repository does not grant Salesforce access; an administrator must provision the appropriate user, permissions and sharing separately.
+The placeholders are intentional. Passwords, OAuth tokens, Salesforce CLI authentication state, customer evidence, internal event materials and local deployment artifacts are not stored in Git. Access to this repository does not grant Salesforce access; an administrator must provision the appropriate user, permissions and sharing separately.
 
 ## Work together
 

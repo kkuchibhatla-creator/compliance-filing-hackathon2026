@@ -1,2 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<CustomField xmlns="http://soap.sforce.com/2006/04/metadata"><fullName>Approver__c</fullName><label>Approver</label><type>Lookup</type><referenceTo>User</referenceTo><relationshipLabel>Gov_Reviews</relationshipLabel><relationshipName>Gov_Reviews</relationshipName><deleteConstraint>SetNull</deleteConstraint></CustomField>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Approver__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>Approver</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>Gov_Reviews</relationshipLabel>
+    <relationshipName>Gov_Reviews</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>
